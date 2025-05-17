@@ -10,15 +10,17 @@ import os
 from pathlib import Path
 from tkinter import messagebox
 import warnings
+from datetime import datetime
 
 # Disable deprecated warning
 warnings.simplefilter(action="ignore", category=FutureWarning)
+warnings.simplefilter(action="ignore", category=UserWarning)
 
 
 # File path constants
 FILE_CONFIG = Path("Config/csopp.xlsx")
-FILE_OTS = Path('DataSource/ots.XLS')
-FILE_COMPLETED = Path("DataSource/completed.XLS")
+FILE_OTS = Path('DataSource/ots.csv')
+FILE_COMPLETED = Path("DataSource/completed.csv")
 FILE_RESULT = Path("Result/Result.xlsx")
 FILE_DETAIL = Path("Result/Detail.xlsx")
 FILE_ERROR = Path("Result/Error.xlsx")
@@ -58,6 +60,40 @@ def extract_setting(config_sheet):
     setting_records = config_sheet.to_dict(orient='records')
     return {row.get('Seting'): row.get('Value') for row in setting_records}
 
+def load_source(path: Path):
+    cols = ["Typ", "Notifctn", "Notif.date", "Time", "Req. start", "Req. End", "Changed on", "Completion", "PG",  "Mn.wk.ctr", "UserStatus", "List name", "Street", "Telephone", "Material", "Serial number", "Description", "Addit. device data"]
+    isOts = True if path.name == 'ots.csv' else False
+    sekarang = datetime.now()
+    
+    df = pd.read_csv(path, usecols=cols, dialect="excel-tab", encoding="utf_16", skiprows=3)
+    # exclude Type LR
+    df = df[~df["Typ"].isin(["Z8", "ZZ"])]
+
+    # Convert some stuff
+    df["Notif.date"] = pd.to_datetime(df["Notif.date"] + " " + df["Time"], format="%d.%m.%Y %H:%M:%S", errors="coerce")
+    df["Completion"] = pd.to_datetime(df["Completion"], errors="coerce", format="%d.%m.%Y")
+    df["Changed on"] = pd.to_datetime(df["Changed on"], format="%d.%m.%Y", errors="coerce")
+    df["UserStatus"] = pd.to_numeric(df["UserStatus"], errors="coerce")
+    
+    df.drop(columns=["Time"], inplace=True)
+
+    # add some stuff    
+    if isOts :
+        df["isOTS"] = 1
+        df["Req. End"] = sekarang
+        df["e_no_req_end"] = 0
+    else:
+        df["isOTS"] = 0
+        df = df[~df["UserStatus"].isin([51, 52])]
+        df["Req. End"] = pd.to_datetime(df["Req. End"], errors="coerce", format="%d.%m.%Y")
+        df["e_no_req_end"] = df['Req. End'].isna().astype(int)
+        df["Req. End"] = df["Req. End"].fillna(sekarang)
+        
+    
+    df["Lo"] = (df["Req. End"] - df["Notif.date"]).dt.days
+    return df
+
+
 # --- Proses Utama ---
 
 # Cek file konfigurasi wajib
@@ -78,5 +114,7 @@ if 'seting' not in config_data:
 
 config_apps = extract_setting(config_data['seting'])
 
-# Tampilkan konfigurasi
-print(config_apps)
+df_ots = load_source(FILE_OTS)
+df_completed = load_source(FILE_COMPLETED)
+source = pd.concat([df_ots, df_completed])
+source.to_excel(FILE_RESULT)
