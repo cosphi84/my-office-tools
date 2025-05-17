@@ -11,6 +11,7 @@ from pathlib import Path
 from tkinter import messagebox
 import warnings
 
+# Disable deprecated warning
 warnings.simplefilter(action="ignore", category=FutureWarning)
 
 
