@@ -17,8 +17,7 @@ from openpyxl.styles import Border, Side, PatternFill, Alignment
 from openpyxl import load_workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.styles.colors import WHITE
-
-
+from file_io import check_file, remove_file, load_file
 
 # Disable deprecated warning
 warnings.simplefilter(action="ignore", category=FutureWarning)
@@ -42,24 +41,6 @@ SHEET_NAMES = {
     "Prod_R": "Produktifitas SSR"
 }
 
-def check_file_exists(path: Path, required=True):
-    """Cek apakah file ada, dan hentikan program jika diperlukan."""
-    if not path.exists():
-        msg = f"File '{path}' tidak ditemukan!"
-        print(msg)
-        if required:
-            raise SystemExit(msg)
-
-def safe_remove(path: Path):
-    """Hapus file jika ada, dengan penanganan error."""
-    if path.exists():
-        try:
-            os.remove(path)
-            print(f"File {path} dihapus.")
-        except Exception as e:
-            msg = f"Gagal menghapus file {path}: {e}"
-            print(msg)
-            raise SystemExit(msg)
 
 def load_source(path: Path):
     cols = ["Typ", "Notifctn", "Notif.date", "Req. start", "Req. End", "Changed on", "Completion", "PG",  "Mn.wk.ctr", "UserStatus", "List name", "Street", "Telephone", "Material", "Serial number", "Description", "Addit. device data"]
@@ -83,9 +64,9 @@ def load_source(path: Path):
     df = df[~df["UserStatus"].isin([51, 52])]
 
     # Convert some stuff
-    df["Notif.date"] = pd.to_datetime(df["Notif.date"], format="%d.%m.%Y", errors="coerce")
+    df["Notif.date"] = pd.to_datetime(df["Notif.date"], dayfirst=True, errors="coerce")
     df["Completion"] = pd.to_datetime(df["Completion"], errors="coerce", format="%d.%m.%Y")
-    df["Changed on"] = pd.to_datetime(df["Changed on"], format="%d.%m.%Y", errors="coerce")
+    df["Changed on"] = pd.to_datetime(df["Changed on"], dayfirst=True, errors="coerce")
     df["UserStatus"] = pd.to_numeric(df["UserStatus"], errors="coerce")
     df["PG"] = pd.to_numeric(df["PG"], errors="coerce")
     df["Mn.wk.ctr"] = df["Mn.wk.ctr"].astype(str)
@@ -301,19 +282,19 @@ def format_result(table_pos: dict):
 # --- Proses Utama ---
 
 # Cek file konfigurasi wajib
-check_file_exists(FILE_CONFIG)
+#check_file_exists(FILE_CONFIG)
 
 # Cek file sumber lainnya 
-check_file_exists(FILE_OTS_ALT)
-check_file_exists(FILE_COMPLETED_ALT)
+#check_file_exists(FILE_OTS_ALT)
+#check_file_exists(FILE_COMPLETED_ALT)
 
 # Hapus file hasil jika sudah ada
 for file in [FILE_RESULT, FILE_DETAIL, FILE_ERROR]:
     safe_remove(file)
 
 # Load Source file & merge
-df_ots = load_source(FILE_OTS_ALT)
-df_completed = load_source(FILE_COMPLETED_ALT)
+df_ots = load_source(check_file(FILE_OTS_ALT, True))
+df_completed = load_source(check_file(FILE_COMPLETED_ALT, True))
 source = pd.concat([df_ots, df_completed])
 
 # Hitung pencapaian global secara general
