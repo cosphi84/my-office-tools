@@ -4,3 +4,4 @@ Result/
 !Result/.gitkeep
 Config/
 !Config/.gitkeep
+__pycache__/
