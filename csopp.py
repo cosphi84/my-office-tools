@@ -7,7 +7,6 @@ Sumber data:
 '''
 import pandas as pd
 import numpy as np
-import os
 from pathlib import Path
 import warnings
 from datetime import datetime
@@ -40,75 +39,6 @@ SHEET_NAMES = {
     "Prod_D": "Produktifitas SDSS",
     "Prod_R": "Produktifitas SSR"
 }
-
-
-def load_source(path: Path):
-    cols = ["Typ", "Notifctn", "Notif.date", "Req. start", "Req. End", "Changed on", "Completion", "PG",  "Mn.wk.ctr", "UserStatus", "List name", "Street", "Telephone", "Material", "Serial number", "Description", "Addit. device data"]
-    isOts = False
-    if path.name == 'ots.csv' or path.name == 'ots.xlsx':
-        isOts = True
-    sekarang = datetime.now()
-
-    # Load beberapa config data
-    cfg_excel = pd.ExcelFile(FILE_CONFIG)
-    with cfg_excel as xls:
-        pg = pd.read_excel(xls, "pg")
-        mwc = pd.read_excel(xls, "mwc").rename(columns={'Kode':'Mn.wk.ctr', "Teknisi": "Work Center"})
-        teknisi = pd.read_excel(xls, "teknisi", usecols=["id", "name"]).rename(columns={"id": "idCSMS", "name":"Teknisi"})
-        excludeMwc = pd.read_excel(xls, "exclude", usecols=["mwc"])
-    
-    df = pd.read_csv(path, usecols=cols, dialect="excel-tab", encoding="utf_16", skiprows=3)
-    # exclude Type LR
-    df = df[~df["Typ"].isin(["Z8", "ZZ"])]
-    # Filter by Status
-    df = df[~df["UserStatus"].isin([51, 52])]
-
-    # Convert some stuff
-    df["Notif.date"] = pd.to_datetime(df["Notif.date"], dayfirst=True, errors="coerce")
-    df["Completion"] = pd.to_datetime(df["Completion"], errors="coerce", format="%d.%m.%Y")
-    df["Changed on"] = pd.to_datetime(df["Changed on"], dayfirst=True, errors="coerce")
-    df["UserStatus"] = pd.to_numeric(df["UserStatus"], errors="coerce")
-    df["PG"] = pd.to_numeric(df["PG"], errors="coerce")
-    df["Mn.wk.ctr"] = df["Mn.wk.ctr"].astype(str)
-    df["bulan_complet"] = df["Completion"].fillna(sekarang).values.astype("datetime64[M]")
-    df["RcvdThisMo"] = (df["Notif.date"] >= df["bulan_complet"]).astype(int)
-    df.drop(columns=["bulan_complet"], inplace=True)
-    df["Req. End"] = pd.to_datetime(df["Req. End"], errors="coerce", format="%d.%m.%Y")
-
-    # add some stuff    
-    if isOts :
-        df["isOTS"] = 1
-        df["Req. End"] = df["Req. End"].fillna(sekarang)
-        df["e_no_req_end"] = 0
-    else:
-        df["isOTS"] = 0
-        df["e_no_req_end"] = df['Req. End'].isna().astype(int)
-        df["Req. End"] = df["Req. End"].fillna(sekarang)
-        # Buang beberapa Main work yang ingin dibuang
-        df = df[~df["Mn.wk.ctr"].isin(excludeMwc)]
-    
-    
-    df["Lo"] = (df["Req. End"] - df["Notif.date"]).dt.days
-    df["1D"] = (df["Lo"] <= 1).astype(int)
-    df["1W"] = (df["Lo"] <= 7).astype(int)
-    df["Cashless"] = df["UserStatus"].isin([94, 95, 96, 98]).astype(int)
-    
-    # CDR = Cabang, SDSS, SSR
-    cdr_kriteria = [
-        df["Mn.wk.ctr"].str.startswith("ST"),
-        df["Mn.wk.ctr"].str.startswith("SR"),
-    ]
-    cdr = ["SDSS", "SSR"]
-    df["CDR"] = np.select(cdr_kriteria, cdr, default="Cabang")
-    df["idCSMS"] = df["Addit. device data"].fillna('').str.split(r"[;:/ ]").str[0]
-
-    pg["PG"] = pd.to_numeric(pg["PG"], errors="coerce")
-    mwc["Mn.wk.ctr"] = mwc["Mn.wk.ctr"].astype(str)
-    df = df.merge(pg, how="left", on="PG")
-    df = df.merge(mwc, how="left", on="Mn.wk.ctr")
-    df = df.merge(teknisi, how="left", on="idCSMS")
-
-    return df
 
 
 def calc_achivement(dfData: pd.DataFrame, GlobalResult : bool = False, Cabang : bool= True):
