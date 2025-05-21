@@ -17,7 +17,7 @@ from openpyxl.styles import Border, Side, PatternFill, Alignment
 from openpyxl import load_workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.styles.colors import WHITE
-from file_io import check_file, remove_file, load_file
+from lib.file_io import check_file, remove_file, load_file
 
 # Disable deprecated warning
 warnings.simplefilter(action="ignore", category=FutureWarning)
