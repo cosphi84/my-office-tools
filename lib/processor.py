@@ -3,169 +3,259 @@ import numpy as np
 from pathlib import Path
 from datetime import datetime
 from functools import reduce
+from typing import Dict
+from Config.config import csopp_config
 
-def fill_data(data: dict, add_data: dict) -> dict:
+def fill_data(data: Dict[str, pd.DataFrame]) -> dict:
     '''
     fill_data: modifikasi dataframe
 
     Args:
         data Dict Dict data, harus berisi 'ots' => dataframe OTS, 'complited' => dataframe complited
-        add_data Dict add_data, berisi seting jenis lr dan status yang akan di exclude
 
     Returns:
-        dict Dataframa OTS dan COMPLITED yang sudah ready
+        dict Dataframe OTS dan COMPLETED yang sudah siap
     '''
-    the_file = Path(__file__).resolve()
-    config_file = the_file.parent.parent / "Config" / "csopp.xlsx"
     sekarang = datetime.now()
     
-    with config_file as cfg:
-        try:
-            pg = pd.read_excel(cfg, "pg")
-            mwc = pd.read_excel(cfg, "mwc").rename(columns={'Kode':'Mn.wk.ctr', "Teknisi": "Work Center"})
-            teknisi = pd.read_excel(cfg, "teknisi", usecols=["id", "name"]).rename(columns={"id": "idCSMS", "name":"Teknisi"})
-            excludeMwc = pd.read_excel(cfg, "exclude", usecols=["mwc"])
-        except Exception as e:
-            raise SystemExit(e)
-    
     result_df = {}
-    
-    for tabel, df in data.items():
-        df = pd.DataFrame(df)
-        cols = ["Typ", "Notifctn", "Notif.date", "Req. start", "Req. End", "Changed on", "Completion", "PG",  "Mn.wk.ctr", "UserStatus", "List name", "Street", "Telephone", "Material", "Serial number", "Description", "Addit. device data", "Changed on"]
-        missing_cols = [col for col in cols if col not in df.columns]
-        if missing_cols:
-            raise SystemExit(f'Kolom berikut tidak ada di file source: {missing_cols}')
-        
-        is_ots = False if tabel != 'ots' else True
-        
-        if len(add_data['exclude_lr']) > 0:
-            df = df[~df["Typ"].isin([add_data["exclude_lr"]])]
+    df_error = {}
 
-        if len(add_data["exclude_stt"]) > 0:
-            df = df[~df["UserStatus"].isin([add_data["exclude_stt"]])]
-        
-        # Convert some stuff
-        df["Notif.date"] = pd.to_datetime(df["Notif.date"], dayfirst=True, errors="coerce")
-        df["Completion"] = pd.to_datetime(df["Completion"], errors="coerce", format="%d.%m.%Y")
-        df["Changed on"] = pd.to_datetime(df["Changed on"], dayfirst=True, errors="coerce")
-        df["UserStatus"] = pd.to_numeric(df["UserStatus"], errors="coerce")
-        df["PG"] = pd.to_numeric(df["PG"], errors="coerce")
-        df["Mn.wk.ctr"] = df["Mn.wk.ctr"].astype(str)
-        df["bulan_complet"] = df["Completion"].fillna(sekarang).values.astype("datetime64[M]")
+    for tabel, df in data.items():
+        df = df.copy()  # menghindari SettingWithCopyWarning di awal loop
+
+        # Konversi dan isian awal
+        df["bulan_complet"] = pd.to_datetime(df["Completn date"].fillna(sekarang)).values.astype("datetime64[M]")
         df["RcvdThisMo"] = (df["Notif.date"] >= df["bulan_complet"]).astype(int)
         df.drop(columns=["bulan_complet"], inplace=True)
-        df["Req. End"] = pd.to_datetime(df["Req. End"], errors="coerce", format="%d.%m.%Y")
 
-        # add some stuff    
-        if is_ots :
-            df["isOTS"] = 1
-            df["Req. End"] = df["Req. End"].fillna(sekarang)
-            df["e_no_req_end"] = 0
+        if tabel == 'ots':
+            df["Required End"] = pd.to_datetime(df["Required End"].fillna(sekarang))
+            df["Lo"] = (df["Required End"] - df["Notif.date"]).dt.days
         else:
-            df["isOTS"] = 0
-            df["e_no_req_end"] = df['Req. End'].isna().astype(int)
-            df["Req. End"] = df["Req. End"].fillna(sekarang)
-            # Buang beberapa Main work yang ingin dibuang
-            df = df[~df["Mn.wk.ctr"].isin(excludeMwc)]
-        
-        df["Lo"] = (df["Req. End"] - df["Notif.date"]).dt.days
-        df["1D"] = (df["Lo"] <= 1).astype(int)
-        df["1W"] = (df["Lo"] <= 7).astype(int)
-        df["Cashless"] = df["UserStatus"].isin(add_data["cashless_stt"]).astype(int)
-        
-        # CDR = Cabang, SDSS, SSR
-        cdr_kriteria = [
-            df["Mn.wk.ctr"].str.startswith("ST"),
-            df["Mn.wk.ctr"].str.startswith("SR"),
-        ]
-        cdr = ["SDSS", "SSR"]
-        df["CDR"] = np.select(cdr_kriteria, cdr, default="Cabang")
-        df["idCSMS"] = df["Addit. device data"].fillna('').str.split(r"[;:/ ]").str[0]
+            # Simpan baris error ke dict
+            df_error["no_req_end"] = df[df["Required End"].isna()]
 
-        pg["PG"] = pd.to_numeric(pg["PG"], errors="coerce")
-        mwc["Mn.wk.ctr"] = mwc["Mn.wk.ctr"].astype(str)
-        df = df.merge(pg, how="left", on="PG").fillna("")
-        df = df.merge(mwc, how="left", on="Mn.wk.ctr").fillna("")
+            # Filter baris yang memiliki Required End, lalu salin aman
+            df = df[~df["Required End"].isna()]
+
+            # Konversi tanggal pastikan konsisten
+            df["Required End"] = pd.to_datetime(df["Required End"])
+            df["Lo"] = (df["Required End"] - df["Notif.date"]).dt.days
+            df["1D"] = (df["Lo"] <= 1).astype(int)
+            df["1W"] = (df["Lo"] <= 7).astype(int)
+
+            df["Cashless"] = df["User status"].isin(csopp_config().get("csopp_cashless_status", [])).astype(int)
+            df["Cash"] = df["User status"].isin(csopp_config().get("csopp_cash_status", [])).astype(int)
+
+            # Filter Main WorkCtr, lalu salin ulang agar aman
+            exclude_mwc = [item[0] for item in csopp_config().get('csopp_exclude_mwc', [])]
+            df = df[~df["Main WorkCtr"].isin(exclude_mwc)]
+        
+            # Hanya bulan ini kompletion datenya
+            startDate = sekarang.replace(day=1)
+            df = df[df["Completn date"] >= startDate]
+
+        # Penentuan CDR berdasarkan prefix kode Main WorkCtr
+        cdr_kriteria = [
+            df["Main WorkCtr"].str.startswith("ST"),
+            df["Main WorkCtr"].str.startswith("SR"),
+            df["Main WorkCtr"].str.startswith("OT"),
+        ]
+        cdr = ["SDSS", "SSR", "OVJ"]
+        df["CDR"] = np.select(cdr_kriteria, cdr, default="Cabang")
+
+        # Ekstraksi idCSMS dari kolom Device data
+        df["idCSMS"] = df["Device data"].fillna('').str.split(r"[;:/ ]").str[0]
+
+        # Load konfigurasi tambahan
+        pg = csopp_config().get('csopp_pg', pd.DataFrame())        
+        mwc = csopp_config().get('csopp_mwc', pd.DataFrame())
+        teknisi = csopp_config().get('csopp_idcsms', pd.DataFrame())
+
+        # Join tambahan - aktifkan jika dibutuhkan
+        if isinstance(pg, pd.DataFrame) and not pg.empty and "Planner group" in pg.columns:
+            pg["Planner group"] = pg["Planner group"].astype(str)
+        if isinstance(mwc, pd.DataFrame) and not mwc.empty and "Main WorkCtr" in mwc.columns:
+            mwc["Main WorkCtr"] = mwc["Main WorkCtr"].astype(str)
+        
+
+        df = df.merge(pg, how="left", on="Planner group").fillna("")
+        df = df.merge(mwc, how="left", on="Main WorkCtr").fillna("")
         df = df.merge(teknisi, how="left", on="idCSMS").fillna("")
 
         result_df[tabel] = df
+
+    return result_df
+
+def apply_filter(dfData: Dict[str, pd.DataFrame], CDR: str = "Cabang") -> Dict[str, pd.DataFrame]:
+    dfData = dfData.copy()
+    cfg = csopp_config().get('csopp_setting', {})
+
+    for tipe, df in dfData.items():
+        df = df.copy()
+
+        # Filter berdasarkan 'Regional' dan 'Cabang'
+        for col in ["Regional", "Cabang"]:
+            filter_val = cfg.get(col, "All")
+            if filter_val != "All" and col in df.columns:
+                df = df[df[col] == filter_val]
+
+        # Filter berdasarkan 'CDR'
+        if CDR != "All" and "CDR" in df.columns:
+            df = df[df["CDR"] == CDR]
+
+        dfData[tipe] = df
+
+    return dfData
     
-    return result_df    
+def get_error_notif(dfData: Dict[str, pd.DataFrame])->dict:
+    '''
+    Fungsi untuk memisahkan error notif dari sumber data mentah
+
+    Parameters:
+        - dfData: Dict dataframe sumber
     
-def calc_achivement(dfData: pd.DataFrame, GlobalResult : bool = False, Cabang : bool= True, additional_data: dict = {}):
+    Returns:
+        - dict data error dan data bersih
+    '''
+    returned_data = {'OK': {}, 'error': {}}
+    for label, df in dfData.items():
+        df = df.copy()
+
+        # Notif masih di xx23 (belum ada penugasan teknisi)
+        returned_data['error'][label] = {'xx23': df[df['Main WorkCtr'].str.endswith('23')]}
+        # Error Notif status completed
+        if label == 'completed':
+            # Buang LR error degan MWC masih di xx23
+            df = df[~df["Main WorkCtr"].str.endswith('23')]
+
+            # Status < 90 
+            returned_data['error'][label] = {'status': df[df['User status'] < 90]}
+            df = df[~(df['User status'] < 90)]
+            
+            # Required end kosong
+            returned_data['error'][label] = {'no_req_end': df[df['Required End'].isna()]}
+            df = df[~df["Required End"].isna()]
+
+            # Required end lebih awal dari req start
+            returned_data['error'][label] = {'min_req_end': df[df['Required End'] < df['Notif.date']]}
+            df = df[~(df["Required End"] < df["Notif.date"])]
+        
+        returned_data["OK"][label] = df
+
+    return returned_data
+
+def calc_achivement(dfData: Dict[str, pd.DataFrame], GlobalResult : bool = False, cdr: str = "All")->pd.DataFrame:
+    dfData = dfData.copy()
     idx = ["Regional"] if GlobalResult == True else ["Regional", "Cabang"]
     if GlobalResult :
         idx = ["Regional"]
-    elif not GlobalResult and Cabang:
+    elif not GlobalResult and cdr == 'Cabang':
         idx = ["Regional", "Cabang"]
     else:
         idx = ["Regional", "Work Center"]
-    pv = pd.pivot_table(dfData, index=idx, values=["Notifctn"], aggfunc="count", fill_value=0, margins=True).rename(columns={"Notifctn": "Total LK"})
+
+    dfData = apply_filter(dfData, CDR=cdr)
+    
+    dfOTS = dfData.get('ots', pd.DataFrame())
+    dfComplete = dfData.get('completed', pd.DataFrame())
     
     # pecah lagi data OTS & data Complete
-    dfOTS = dfData[dfData["isOTS"].isin([1])]
-    df30 = dfOTS[dfOTS["UserStatus"].isin([30])]
+    df30 = dfOTS[dfOTS["User status"].isin([30])]
     dfLo = dfOTS[dfOTS["Lo"] >= 60]
-    dfComplete = dfData[dfData["isOTS"].isin([0])]
-    dfCash = dfData[dfData["UserStatus"].isin([93])]
+    dfCash = dfComplete[dfComplete["User status"].isin(csopp_config().get('csopp_cash_status', []))]
     # Abaikan type ZX untuk perhitungan Cashless
-    dfCash = dfCash[~dfCash["Typ"].isin(["ZX"])]
+    dfCash = dfCash[~dfCash["Notifictn type"].isin(csopp_config().get('csopp_exclude_cash', []))]
 
     # Pivoting
-    pv_cmplt = pd.pivot_table(dfComplete, index=idx, values=["Notifctn"], aggfunc="count", fill_value=0, margins=True).rename(columns={"Notifctn": "Komplit"})
-    pv_ots = pd.pivot_table(dfOTS, index=idx, values=["Notifctn"], aggfunc="count", fill_value=0, margins=True).rename(columns={"Notifctn": "OTS"})
+    pv_ots = pd.pivot_table(dfOTS, index=idx, values=["Notification"], aggfunc="count", fill_value=0, margins=True).rename(columns={"Notification": "OTS"})
+    pv_cmplt = pd.pivot_table(dfComplete, index=idx, values=["Notification"], aggfunc="count", fill_value=0, margins=True).rename(columns={"Notification": "Komplit"})
     pv_1D = pd.pivot_table(dfComplete, index=idx, values=["1D"], aggfunc="sum", fill_value=0, margins=True).rename(columns={"1D": "1 Day"})
     pv_1W = pd.pivot_table(dfComplete, index=idx, values=["1W"], aggfunc="sum", fill_value=0, margins=True).rename(columns={"1W": "1 Week"})
-    pv_cash = pd.pivot_table(dfCash, index=idx, values=["Notifctn"], aggfunc="count", fill_value=0, margins=True).rename(columns={"Notifctn":"Cash"})
+    pv_cash = pd.pivot_table(dfCash, index=idx, values=["Notification"], aggfunc="count", fill_value=0, margins=True).rename(columns={"Notification":"Cash"})
     pv_cashless = pd.pivot_table(dfComplete, index=idx, values=["Cashless"], aggfunc="sum", fill_value=0, margins=True)
-    pv_30 = pd.pivot_table(df30, index=idx, values=["Notifctn"], aggfunc="count", fill_value=0, margins=True).rename(columns={"Notifctn": "STT 30"})
-    pv_Lo = pd.pivot_table(dfLo, index=idx, values=["Notifctn"], aggfunc="count", fill_value=0, margins=True).rename(columns={"Notifctn": "LO"})
+    pv_30 = pd.pivot_table(df30, index=idx, values=["Notification"], aggfunc="count", fill_value=0, margins=True).rename(columns={"Notification": "STT 30"})
+    pv_Lo = pd.pivot_table(dfLo, index=idx, values=["Notification"], aggfunc="count", fill_value=0, margins=True).rename(columns={"Notification": "LO"})
     pv_TAT = pd.pivot_table(dfComplete, index=idx, values=["Lo"], aggfunc="mean", fill_value=0, margins=True).rename(columns={"Lo": "TAT"})
-    pv = reduce(lambda left, right: pd.merge(left, right, on=idx, how="left"), [pv, pv_ots, pv_cmplt, pv_1D, pv_1W, pv_cash, pv_cashless, pv_30, pv_Lo, pv_TAT]).fillna(0)
+    pv = reduce(lambda left, right: pd.merge(left, right, on=idx, how="left"), [pv_ots, pv_cmplt, pv_1D, pv_1W, pv_cash, pv_cashless, pv_30, pv_Lo, pv_TAT]).fillna(0)
 
+    pv["Total LK"] = pv["OTS"] + pv["Komplit"]
     pv["Cplt Ratio"] = (pv["Komplit"] / pv["Total LK"])
     pv["LO Ratio"] = (pv["LO"] / pv["OTS"])
     pv["1D Ratio"] = (pv["1 Day"] / pv["Komplit"]) 
     pv["1W Ratio"] = (pv["1 Week"] / pv["Komplit"]) 
     pv["Cashless Ratio"] = (pv["Cashless"] / ( pv["Cashless"] + pv["Cash"]))
-    pv["STT 30 VS OTS"] = (pv["STT 30"] / pv["OTS"]) 
+    pv["STT 30 VS OTS"] = (pv["STT 30"] / pv["OTS"])
+
+    pv = pv[['OTS', 'STT 30', 'LO', 'Komplit', 'Total LK', 'TAT', '1 Day', '1 Week', 'Cash', 'Cashless', 'Cplt Ratio', '1D Ratio', '1W Ratio', 'Cashless Ratio', 'LO Ratio', 'STT 30 VS OTS']]
+    
     return pv
 
-def calc_productifitas(dfData: pd.DataFrame, byMWC : bool = True, additional_data: dict = {}):
-    the_file = Path(__file__).resolve()
-    config_file = the_file.parent.parent / "Config" / "csopp.xlsx"
-    idx = ["Regional","Cabang", "Work Center"] if byMWC == True else ["Regional","Cabang", "Mn.wk.ctr", "Teknisi"]
-    cfg = pd.read_excel(config_file, "seting").set_index("Seting")["Value"].to_dict()
+def calc_productifitas(dfData: Dict[str, pd.DataFrame], byMWC : bool = True, cdr:str= "Cabang")->pd.DataFrame:
+    dfData = dfData.copy()
+    idx = ["Regional","Cabang", "Work Center"] if byMWC == True else ["Regional","Cabang", "Main WorkCtr", "Teknisi"]   
+    config = csopp_config().get('csopp_setting')
+    hari = config.get('Hari')
+    
+    dfData = apply_filter(dfData, cdr)
+    
+    dfComplete = dfData.get('completed', pd.DataFrame())
     
     # pecah lagi data OTS & data Complete
-    dfComplete = dfData[dfData["isOTS"].isin([0])]
-    dfCash = dfData[dfData["UserStatus"].isin(additional_data["cash_stt"])]
+    dfCash = dfComplete[dfComplete["User status"].isin(csopp_config().get('csopp_cash_status', []))]
     # Abaikan type ZX untuk perhitungan Cashless
-    dfCash = dfCash[~dfCash["Typ"].isin(additional_data["exclude_cash"])]
+    dfCash = dfCash[~dfCash["Notifictn type"].isin(csopp_config().get('csopp_exclude_cash', []))]
 
     # Pivoting
-    pv = pd.pivot_table(dfComplete, index=idx, values=["Notifctn"], aggfunc="count", fill_value=0, margins=True).rename(columns={"Notifctn": "Total LK"})
+    pv_cmplt = pd.pivot_table(dfComplete, index=idx, values=["Notification"], aggfunc="count", fill_value=0, margins=True).rename(columns={"Notification": "Komplit"})
     pv_1D = pd.pivot_table(dfComplete, index=idx, values=["1D"], aggfunc="sum", fill_value=0, margins=True).rename(columns={"1D": "1 Day"})
     pv_1W = pd.pivot_table(dfComplete, index=idx, values=["1W"], aggfunc="sum", fill_value=0, margins=True).rename(columns={"1W": "1 Week"})
-    pv_cash = pd.pivot_table(dfCash, index=idx, values=["Notifctn"], aggfunc="count", fill_value=0, margins=True).rename(columns={"Notifctn":"Cash"})
+    pv_cash = pd.pivot_table(dfCash, index=idx, values=["Notification"], aggfunc="count", fill_value=0, margins=True).rename(columns={"Notification":"Cash"})
     pv_cashless = pd.pivot_table(dfComplete, index=idx, values=["Cashless"], aggfunc="sum", fill_value=0, margins=True)
     pv_TAT = pd.pivot_table(dfComplete, index=idx, values=["Lo"], aggfunc="mean", fill_value=0, margins=True).rename(columns={"Lo": "TAT"})
-    pv = reduce(lambda left, right: pd.merge(left, right, on=idx, how="left"), [pv, pv_1D, pv_1W, pv_cash, pv_cashless, pv_TAT]).fillna(0)
-
-    pv["Produktifitas"] = pv["Total LK"] / cfg["Hari"]
-    pv["1D Ratio"] = (pv["1 Day"] / pv["Total LK"]) 
-    pv["1W Ratio"] = (pv["1 Week"] / pv["Total LK"]) 
+    pv = reduce(lambda left, right: pd.merge(left, right, on=idx, how="left"), [pv_cmplt, pv_1D, pv_1W, pv_cash, pv_cashless, pv_TAT]).fillna(0)
+    pv["Produktifitas"] = pv["Komplit"] / hari
+    pv["1D Ratio"] = (pv["1 Day"] / pv["Komplit"]) 
+    pv["1W Ratio"] = (pv["1 Week"] / pv["Komplit"]) 
     pv["Cashless Ratio"] = (pv["Cashless"] / ( pv["Cashless"] + pv["Cash"]))
+
+    pv = pv[['Komplit','TAT', '1 Day', '1 Week', 'Cash', 'Cashless', 'Produktifitas', '1D Ratio', '1W Ratio', 'Cashless Ratio']]
+    
     return pv
 
-def apply_filter(dfData: pd.DataFrame, CDR = "Cabang"):
-    the_file = Path(__file__).resolve()
-    config_file = the_file.parent.parent / "Config" / "csopp.xlsx"
-    cfg = pd.read_excel(config_file, "seting").set_index("Seting")["Value"].to_dict()
-    for col in ["Regional", "Cabang"]:
-        if cfg.get(col, "All") != "All":
-            dfData = dfData[dfData[col] == cfg[col]]
 
-    dfData = dfData[dfData["CDR"] == CDR]
-    return dfData
+def get_kordinat_table(result: Dict[str, Dict[str, pd.DataFrame]]) -> dict:
+    kordinat_table = {}
+
+    for sheet, tables in result.items():
+        kordinat_table[sheet] = {}
+        space = 2  # spasi antar tabel
+        srow = 0   # mulai dari baris 1 (Excel-like)
+        scol = 0   # mulai dari kolom 1 (Excel-like)
+
+        vertical_layout = sheet == "Pencapaian"
+
+        for name, table in tables.items():
+            table = table.copy()
+            #table = table.reset_index(drop=False)  # pastikan index jadi kolom
+            nrow, ncol = table.shape  # termasuk kolom index yang baru
+
+            erow = srow + nrow
+            ecol = scol + ncol - 1
+            nindex = len(table.index.names)
+
+            kordinat_table[sheet][name] = {
+                'start_row': srow,
+                'end_row': erow,
+                'start_col': scol,
+                'end_col': ecol,
+                'nindex':  nindex
+            }
+
+            if vertical_layout:
+                srow = erow + space + 1
+            else:
+                scol = ecol + space + nindex
+
+    return kordinat_table

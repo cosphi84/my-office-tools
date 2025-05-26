@@ -1,6 +1,9 @@
 import pandas as pd
 import os
 from pathlib import Path
+from tkinter import messagebox
+from Config.config import csopp_config
+from typing import Dict
 
 
 
@@ -17,7 +20,7 @@ def check_file(path: Path, required: bool = True):
     '''
     if not path.exists():
         msg = f"File '{path}' tidak ditemukan!"
-        print(msg)
+        messagebox.showerror('Error', f'{msg}')
         if required:
             raise SystemExit(msg)
     return path
@@ -43,50 +46,65 @@ def remove_file(path: Path):
         
         return True
 
-def load_source(source = []) -> dict:
+def load_source() -> dict:
     '''
     load_source: Memuat file SourceData menjadi dic dataframe. Support SourceFile hanya ots dan completed dengan extensi XLS, XLSX dan CSV saja
 
     Returns:
         dic df["ots", "completed"] atau None
     '''
-    cols = {
-            ".csv" : [   "Typ", "Notifctn", "Notif.date", "Req. start","Req. End","Changed on","Completion","PG","Mn.wk.ctr","UserStatus",
-                        "List name", "Street", "Telephone", "Material", "Serial number", "Description","Addit. device data", 'Changed on'],
-            ".xlsx" : [  "Notifictn type", "Notification", "Notif.date", "Req. start","Required End","Changed on","Completn date","Planner group",
-                        "Main WorkCtr","User status","List name", "Street", "Telephone", "Material", "Serial number", "Description", 'Changed on'
-                        "Device data"]
+    cols = ["Notifictn type", "Notification", "Notif.date", "Req. start","Required End","Changed on","Completn date","Planner group",
+            "Main WorkCtr","User status","List name", "Street", "Telephone", "Material", "Serial number", "Description", "Changed on",
+            "Device data"]    
+    sources = csopp_config().get('csopp_files')
+    s_files = {
+        'ots': sources['FILE_OTS'],
+        'completed': sources['FILE_COMPLETED']
     }
-    rename_cols = {
-        'Notifictn type': 'Typ',
-        'Notification': 'Notifctn', 
-        'Required End': 'Req. End', 
-        'User status' : 'UserStatus', 
-        'Device data' : 'Addit. device data',
-        'Main WorkCtr': 'Mn.wk.ctr',
-        'Planner group':'PG',
-        'Completn date' : 'Completion'
-    }
-    if len(source) <= 0:
-        raise SystemExit("File Source mutlak dibutuhkan")
+    
     dfResult = {}
-    for label, file in source.items():
+    for label, file in s_files.items():
         file = Path(file)
-        ext = file.suffix.lower()
-        if ext == '.csv' or ext == '.xls':
-            try:
-              dfResult[label]   = pd.read_csv(file, dialect='excel-tab', encoding='utf_16', skiprows=3, usecols=cols[ext])
-            except Exception as e:
-                raise SystemExit(f'Gagal meload source file: {e}')
-        elif ext == '.xlsx':
-            try:
-              dfResult[label]   = pd.read_excel(file, usecols=cols[ext]).rename(columns=rename_cols)
-            except Exception as e:
-                raise SystemExit(f'Gagal meload source file: {e}')
-        else:
-            raise SystemExit("File source tidak didukung.") 
+
+        try:
+            df = pd.read_excel(
+                file, 
+                usecols=cols,
+                engine="openpyxl"
+            )
+        except Exception as e:
+            messagebox.showerror("Error", f'Gagal memuat Source File: {e}')
+            raise SystemExit()
+        # Buang semua LR yang tidak dipakai
+        df[~df['Notifictn type'].isin([csopp_config().get('csopp_exclude_typ',[])])]
+        
+        # fix column data type
+        df["Notif.date"] = pd.to_datetime(df["Notif.date"], errors='coerce')
+        df["Req. start"] = pd.to_datetime(df["Req. start"], errors="coerce")
+        df["Required End"] = pd.to_datetime(df["Required End"], errors="coerce")
+        df["Changed on"] = pd.to_datetime(df["Changed on"], errors="coerce")
+        df["Completn date"] = pd.to_datetime(df["Completn date"], errors="coerce")
+        df["Planner group"] = df["Planner group"].astype(str)
+        df["User status"] = pd.to_numeric(df["User status"], errors="coerce")
+        df["Main WorkCtr"] = df["Main WorkCtr"].astype(str)
+        df["Notification"] = df["Notification"].astype(str)
+
+        dfResult[label] = df
     return dfResult
 
+def print_error(df: Dict[str, dict] ):
+    files = csopp_config().get('csopp_files')
+    for jenis, tables in df.items():
+        with pd.ExcelWriter(files.get('FILE_ERROR')) as xls:
+            if jenis == 'error':
+                for i, datas in tables.items():
+                    for sheet, obj in datas.items():
+                        obj.to_excel(xls, sheet_name=i+"_"+sheet, index=False)
+            else:
+                continue
+
+
+'''
 def write_excel(source: dict) -> bool:
     with pd.ExcelWriter(FILE_RESULT, engine="openpyxl") as writer:
     row = 0
@@ -159,3 +177,4 @@ def write_excel(source: dict) -> bool:
         })
 
     return True
+'''
