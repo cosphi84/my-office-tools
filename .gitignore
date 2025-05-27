@@ -6,3 +6,4 @@ Config/
 !Config/.gitkeep
 !Config/config.py
 __pycache__/
+*.pyc

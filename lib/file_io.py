@@ -103,6 +103,9 @@ def print_error(df: Dict[str, dict] ):
             else:
                 continue
 
+def export_to_excel(result: Dict[str, pd.DataFrame])->bool:
+    files = csopp_config().get('csopp_file')
+
 
 '''
 def write_excel(source: dict) -> bool:

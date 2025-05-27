@@ -1,9 +1,19 @@
 from pathlib import Path
 import pandas as pd
 from tkinter import messagebox
-from typing import Dict
+from typing import Dict, TypedDict, Any
 
-def csopp_config() -> Dict[str, Dict]:
+class FileConfig(TypedDict):
+    FILE_OTS: Path
+    FILE_COMPLETED: Path
+    FILE_RESULT: Path
+    FILE_DETAIL: Path
+    FILE_ERROR: Path
+    FILE_TEKNISI: Path
+    SHEET_NAMES: Dict[str, str]
+
+
+def csopp_config() -> Dict[str, Any]:
     the_file = Path(__file__).resolve().parent
     csopp = the_file / "csopp.xlsx"
     # missing

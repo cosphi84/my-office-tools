@@ -9,7 +9,7 @@ import warnings
 
 from lib.file_io import load_source, print_error
 from Config.config import csopp_config
-from lib.processor import fill_data, get_error_notif, calc_achivement, calc_productifitas, get_kordinat_table
+from lib.processor import fill_data, get_error_notif, calc_achivement, calc_productivity, get_table_position
 from lib.formater import format_result
 import pandas as pd
 
@@ -47,21 +47,21 @@ def main()->bool:
         },
         # Produktifitas by Main work center dan by ID CSMS
         "Produktifitas Cabang": {
-            'ByMWC': calc_productifitas(final_data, byMWC=True, cdr="Cabang" ).fillna(0),
-            'ByTech': calc_productifitas(final_data, byMWC=False, cdr="Cabang").fillna(0),
+            'ByMWC': calc_productivity(final_data, byMWC=True, cdr="Cabang" ).fillna(0),
+            'ByTech': calc_productivity(final_data, byMWC=False, cdr="Cabang").fillna(0),
         },
         "Produktifitas SDSS": {
-            'ByMWC': calc_productifitas(final_data, byMWC=True, cdr="SDSS" ).fillna(0),
-            'ByTech': calc_productifitas(final_data, byMWC=False, cdr="SDSS").fillna(0),
+            'ByMWC': calc_productivity(final_data, byMWC=True, cdr="SDSS" ).fillna(0),
+            'ByTech': calc_productivity(final_data, byMWC=False, cdr="SDSS").fillna(0),
         },
         "Produktifitas SSR": {
-            'ByMWC': calc_productifitas(final_data, byMWC=True, cdr="SSR" ).fillna(0),
-            'ByTech': calc_productifitas(final_data, byMWC=False, cdr="SSR").fillna(0),
+            'ByMWC': calc_productivity(final_data, byMWC=True, cdr="SSR" ).fillna(0),
+            'ByTech': calc_productivity(final_data, byMWC=False, cdr="SSR").fillna(0),
         }
     }
 
     # Kordinat Tabel
-    kordinat_table = get_kordinat_table(result)
+    kordinat_table = get_table_position(result)
         
     with pd.ExcelWriter(path_result) as file:
         for sheet, tables in result.items():

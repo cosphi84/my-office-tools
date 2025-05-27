@@ -192,7 +192,7 @@ def calc_achivement(dfData: Dict[str, pd.DataFrame], GlobalResult : bool = False
     
     return pv
 
-def calc_productifitas(dfData: Dict[str, pd.DataFrame], byMWC : bool = True, cdr:str= "Cabang")->pd.DataFrame:
+def calc_productivity(dfData: Dict[str, pd.DataFrame], byMWC : bool = True, cdr:str= "Cabang")->pd.DataFrame:
     dfData = dfData.copy()
     idx = ["Regional","Cabang", "Work Center"] if byMWC == True else ["Regional","Cabang", "Main WorkCtr", "Teknisi"]   
     config = csopp_config().get('csopp_setting')
@@ -225,7 +225,7 @@ def calc_productifitas(dfData: Dict[str, pd.DataFrame], byMWC : bool = True, cdr
     return pv
 
 
-def get_kordinat_table(result: Dict[str, Dict[str, pd.DataFrame]]) -> dict:
+def get_table_position(result: Dict[str, Dict[str, pd.DataFrame]]) -> dict:
     kordinat_table = {}
 
     for sheet, tables in result.items():
