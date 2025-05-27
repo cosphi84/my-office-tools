@@ -4,5 +4,5 @@ Result/
 !Result/.gitkeep
 Config/
 !Config/.gitkeep
-!Config/cofig.py
+!Config/config.py
 __pycache__/
