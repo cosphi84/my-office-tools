@@ -29,7 +29,7 @@ def get_detail_lr(souredata):
     # Z2 
     dfZ2 = dfOts[dfOts["Notifictn type"] == 'Z2']
 
-
+    
     
 
     return df

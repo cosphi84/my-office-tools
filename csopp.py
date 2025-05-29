@@ -40,23 +40,23 @@ def main()->bool:
     result = {
         # Pencapaian untuk Nasional, Cabang, SDSS dan SSR
         "Pencapaian": {
-            "Nasional": calc_achivement(final_data, True).fillna(0),
-            "Cabang": calc_achivement(final_data, GlobalResult=False, cdr="Cabang").fillna(0),
-            "SDSS": calc_achivement(final_data, False, "SDSS").fillna(0),
-            "SSR": calc_achivement(final_data, False, "SSR").fillna(0),
+            "Nasional": calc_achivement(final_data, True),
+            "Cabang": calc_achivement(final_data, GlobalResult=False, cdr="Cabang"),
+            "SDSS": calc_achivement(final_data, False, "SDSS"),
+            "SSR": calc_achivement(final_data, False, "SSR"),
         },
         # Produktifitas by Main work center dan by ID CSMS
         "Produktifitas Cabang": {
-            'ByMWC': calc_productivity(final_data, byMWC=True, cdr="Cabang" ).fillna(0),
-            'ByTech': calc_productivity(final_data, byMWC=False, cdr="Cabang").fillna(0),
+            'ByMWC': calc_productivity(final_data, byMWC=True, cdr="Cabang" ),
+            'ByTech': calc_productivity(final_data, byMWC=False, cdr="Cabang"),
         },
         "Produktifitas SDSS": {
-            'ByMWC': calc_productivity(final_data, byMWC=True, cdr="SDSS" ).fillna(0),
-            'ByTech': calc_productivity(final_data, byMWC=False, cdr="SDSS").fillna(0),
+            'ByMWC': calc_productivity(final_data, byMWC=True, cdr="SDSS" ),
+            'ByTech': calc_productivity(final_data, byMWC=False, cdr="SDSS"),
         },
         "Produktifitas SSR": {
-            'ByMWC': calc_productivity(final_data, byMWC=True, cdr="SSR" ).fillna(0),
-            'ByTech': calc_productivity(final_data, byMWC=False, cdr="SSR").fillna(0),
+            'ByMWC': calc_productivity(final_data, byMWC=True, cdr="SSR" ),
+            'ByTech': calc_productivity(final_data, byMWC=False, cdr="SSR"),
         }
     }
 
@@ -66,6 +66,8 @@ def main()->bool:
     with pd.ExcelWriter(path_result) as file:
         for sheet, tables in result.items():
             for name, table in tables.items():
+                if table is None:
+                    continue
                 table.to_excel(file, sheet_name=sheet, startcol=kordinat_table[sheet][name]["start_col"], startrow=kordinat_table[sheet][name]["start_row"], )
     
     format_result(kordinat_table)    

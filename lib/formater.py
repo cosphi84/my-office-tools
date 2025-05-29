@@ -39,20 +39,21 @@ def format_result(table_pos: dict):
     #print(excel_tables)
     col_maps = {
         "Pencapaian" : {
-            "TAT": 5,
-            "Cplt Ratio": 10,
-            "1D Ratio": 11,
-            "1W Ratio": 12,
-            "Cashless Ratio": 13,
-            "LO Ratio": 14,
-            "STT 30 VS OTS": 15
+            "TAT": 6,
+            "Cplt Ratio": 11,
+            "1D Ratio": 12,
+            "1W Ratio": 13,
+            "Cashless Ratio": 14,
+            "LO Ratio": 15,
+            "STT 30 VS OTS": 16,
+            "STT 30 VS ALL": 17
         },
         "Produktifitas": {
-            "TAT": 1,
-            "Produktifitas": 6,
-            "1D Ratio": 7,
-            "1W Ratio": 8,
-            "Cashless Ratio": 9
+            "TAT": 2,
+            "Produktifitas": 7,
+            "1D Ratio": 8,
+            "1W Ratio": 9,
+            "Cashless Ratio": 10
         }
     }
 
@@ -61,11 +62,11 @@ def format_result(table_pos: dict):
         
         for table, coord in table_pos[sheet.title].items():
             # Panjang Index Table as constant
-            table_index = coord['nindex']
+            table_index = coord['nindex']-1
             # Format Header
             for col in sheet.iter_cols(
                 min_row=coord["start_row"]+1, max_row=coord["start_row"]+1,
-                min_col=coord["start_col"]+1, max_col=coord["end_col"]+1+table_index
+                min_col=coord["start_col"]+1, max_col=coord["end_col"]+2+table_index
             ):
                  for idx, cell in enumerate(col):
                      cell.fill = sky_blue
@@ -75,7 +76,7 @@ def format_result(table_pos: dict):
             # Format body tabel
             for row in sheet.iter_rows(
                 min_row=coord["start_row"]+1, max_row=coord["end_row"]+1,
-                min_col=coord["start_col"]+1, max_col=coord["end_col"]+1+table_index
+                min_col=coord["start_col"]+1, max_col=coord["end_col"]+2+table_index
             ):
                 for idx, cell in enumerate(row):
                     cell.border = border

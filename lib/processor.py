@@ -109,7 +109,7 @@ def apply_filter(dfData: Dict[str, pd.DataFrame], CDR: str = "Cabang") -> Dict[s
 
     return dfData
     
-def get_error_notif(dfData: Dict[str, pd.DataFrame])->dict:
+def get_error_notif(dfData: Dict[str, pd.DataFrame]):
     '''
     Fungsi untuk memisahkan error notif dari sumber data mentah
 
@@ -122,6 +122,9 @@ def get_error_notif(dfData: Dict[str, pd.DataFrame])->dict:
     returned_data = {'OK': {}, 'error': {}}
     for label, df in dfData.items():
         df = df.copy()
+
+        if len(df) <= 0:
+            return None
 
         # Notif masih di xx23 (belum ada penugasan teknisi)
         returned_data['error'][label] = {'xx23': df[df['Main WorkCtr'].str.endswith('23')]}
@@ -146,7 +149,7 @@ def get_error_notif(dfData: Dict[str, pd.DataFrame])->dict:
 
     return returned_data
 
-def calc_achivement(dfData: Dict[str, pd.DataFrame], GlobalResult : bool = False, cdr: str = "All")->pd.DataFrame:
+def calc_achivement(dfData: Dict[str, pd.DataFrame], GlobalResult : bool = False, cdr: str = "All"):
     dfData = dfData.copy()
     idx = ["Regional"] if GlobalResult == True else ["Regional", "Cabang"]
     if GlobalResult :
@@ -161,6 +164,9 @@ def calc_achivement(dfData: Dict[str, pd.DataFrame], GlobalResult : bool = False
     dfOTS = dfData.get('ots', pd.DataFrame())
     dfComplete = dfData.get('completed', pd.DataFrame())
     
+    if len(dfOTS) <= 0 or len(dfComplete) <= 0:
+        return None
+    
     # pecah lagi data OTS & data Complete
     df30 = dfOTS[dfOTS["User status"].isin([30])]
     dfLo = dfOTS[dfOTS["Lo"] >= 60]
@@ -169,30 +175,31 @@ def calc_achivement(dfData: Dict[str, pd.DataFrame], GlobalResult : bool = False
     dfCash = dfCash[~dfCash["Notifictn type"].isin(csopp_config().get('csopp_exclude_cash', []))]
 
     # Pivoting
-    pv_ots = pd.pivot_table(dfOTS, index=idx, values=["Notification"], aggfunc="count", fill_value=0, margins=True).rename(columns={"Notification": "OTS"})
-    pv_cmplt = pd.pivot_table(dfComplete, index=idx, values=["Notification"], aggfunc="count", fill_value=0, margins=True).rename(columns={"Notification": "Komplit"})
-    pv_1D = pd.pivot_table(dfComplete, index=idx, values=["1D"], aggfunc="sum", fill_value=0, margins=True).rename(columns={"1D": "1 Day"})
-    pv_1W = pd.pivot_table(dfComplete, index=idx, values=["1W"], aggfunc="sum", fill_value=0, margins=True).rename(columns={"1W": "1 Week"})
-    pv_cash = pd.pivot_table(dfCash, index=idx, values=["Notification"], aggfunc="count", fill_value=0, margins=True).rename(columns={"Notification":"Cash"})
-    pv_cashless = pd.pivot_table(dfComplete, index=idx, values=["Cashless"], aggfunc="sum", fill_value=0, margins=True)
-    pv_30 = pd.pivot_table(df30, index=idx, values=["Notification"], aggfunc="count", fill_value=0, margins=True).rename(columns={"Notification": "STT 30"})
-    pv_Lo = pd.pivot_table(dfLo, index=idx, values=["Notification"], aggfunc="count", fill_value=0, margins=True).rename(columns={"Notification": "LO"})
-    pv_TAT = pd.pivot_table(dfComplete, index=idx, values=["Lo"], aggfunc="mean", fill_value=0, margins=True).rename(columns={"Lo": "TAT"})
+    pv_ots = pd.pivot_table(dfOTS, index=idx, values=["Notification"], aggfunc="count", fill_value=0, margins=True).rename(columns={"Notification": "OTS"}).fillna(0)
+    pv_cmplt = pd.pivot_table(dfComplete, index=idx, values=["Notification"], aggfunc="count", fill_value=0, margins=True).rename(columns={"Notification": "Komplit"}).fillna(0)
+    pv_1D = pd.pivot_table(dfComplete, index=idx, values=["1D"], aggfunc="sum", fill_value=0, margins=True).rename(columns={"1D": "1 Day"}).fillna(0)
+    pv_1W = pd.pivot_table(dfComplete, index=idx, values=["1W"], aggfunc="sum", fill_value=0, margins=True).rename(columns={"1W": "1 Week"}).fillna(0)
+    pv_cash = pd.pivot_table(dfCash, index=idx, values=["Notification"], aggfunc="count", fill_value=0, margins=True).rename(columns={"Notification":"Cash"}).fillna(0)
+    pv_cashless = pd.pivot_table(dfComplete, index=idx, values=["Cashless"], aggfunc="sum", fill_value=0, margins=True).fillna(0)
+    pv_30 = pd.pivot_table(df30, index=idx, values=["Notification"], aggfunc="count", fill_value=0, margins=True).rename(columns={"Notification": "STT 30"}).fillna(0)
+    pv_Lo = pd.pivot_table(dfLo, index=idx, values=["Notification"], aggfunc="count", fill_value=0, margins=True).rename(columns={"Notification": "LO"}).fillna(0)
+    pv_TAT = pd.pivot_table(dfComplete, index=idx, values=["Lo"], aggfunc="mean", fill_value=0, margins=True).rename(columns={"Lo": "TAT"}).fillna(0)
     pv = reduce(lambda left, right: pd.merge(left, right, on=idx, how="left"), [pv_ots, pv_cmplt, pv_1D, pv_1W, pv_cash, pv_cashless, pv_30, pv_Lo, pv_TAT]).fillna(0)
 
-    pv["Total LK"] = pv["OTS"] + pv["Komplit"]
-    pv["Cplt Ratio"] = (pv["Komplit"] / pv["Total LK"])
-    pv["LO Ratio"] = (pv["LO"] / pv["OTS"])
-    pv["1D Ratio"] = (pv["1 Day"] / pv["Komplit"]) 
-    pv["1W Ratio"] = (pv["1 Week"] / pv["Komplit"]) 
-    pv["Cashless Ratio"] = (pv["Cashless"] / ( pv["Cashless"] + pv["Cash"]))
-    pv["STT 30 VS OTS"] = (pv["STT 30"] / pv["OTS"])
+    pv["Total LK"] = (pv["OTS"] + pv["Komplit"]).fillna(0)
+    pv["Cplt Ratio"] = (pv["Komplit"] / pv["Total LK"]).fillna(0)
+    pv["LO Ratio"] = (pv["LO"] / pv["OTS"]).fillna(0)
+    pv["1D Ratio"] = (pv["1 Day"] / pv["Komplit"]).fillna(0)
+    pv["1W Ratio"] = (pv["1 Week"] / pv["Komplit"]).fillna(0)
+    pv["Cashless Ratio"] = (pv["Cashless"] / ( pv["Cashless"] + pv["Cash"])).fillna(0)
+    pv["STT 30 VS OTS"] = (pv["STT 30"] / pv["OTS"]).fillna(0)
+    pv["STT 30 VS ALL"] = (pv["STT 30"] / pv["Total LK"]).fillna(0)
 
-    pv = pv[['OTS', 'STT 30', 'LO', 'Komplit', 'Total LK', 'TAT', '1 Day', '1 Week', 'Cash', 'Cashless', 'Cplt Ratio', '1D Ratio', '1W Ratio', 'Cashless Ratio', 'LO Ratio', 'STT 30 VS OTS']]
+    pv = pv[['OTS', 'STT 30', 'LO', 'Komplit', 'Total LK', 'TAT', '1 Day', '1 Week', 'Cash', 'Cashless', 'Cplt Ratio', '1D Ratio', '1W Ratio', 'Cashless Ratio', 'LO Ratio', 'STT 30 VS OTS', 'STT 30 VS ALL']]
     
     return pv
 
-def calc_productivity(dfData: Dict[str, pd.DataFrame], byMWC : bool = True, cdr:str= "Cabang")->pd.DataFrame:
+def calc_productivity(dfData: Dict[str, pd.DataFrame], byMWC : bool = True, cdr:str= "Cabang"):
     dfData = dfData.copy()
     idx = ["Regional","Cabang", "Work Center"] if byMWC == True else ["Regional","Cabang", "Main WorkCtr", "Teknisi"]   
     config = csopp_config().get('csopp_setting')
@@ -201,6 +208,8 @@ def calc_productivity(dfData: Dict[str, pd.DataFrame], byMWC : bool = True, cdr:
     dfData = apply_filter(dfData, cdr)
     
     dfComplete = dfData.get('completed', pd.DataFrame())
+    if len(dfComplete) <= 0:
+        return None
     
     # pecah lagi data OTS & data Complete
     dfCash = dfComplete[dfComplete["User status"].isin(csopp_config().get('csopp_cash_status', []))]
@@ -209,16 +218,16 @@ def calc_productivity(dfData: Dict[str, pd.DataFrame], byMWC : bool = True, cdr:
 
     # Pivoting
     pv_cmplt = pd.pivot_table(dfComplete, index=idx, values=["Notification"], aggfunc="count", fill_value=0, margins=True).rename(columns={"Notification": "Komplit"})
-    pv_1D = pd.pivot_table(dfComplete, index=idx, values=["1D"], aggfunc="sum", fill_value=0, margins=True).rename(columns={"1D": "1 Day"})
-    pv_1W = pd.pivot_table(dfComplete, index=idx, values=["1W"], aggfunc="sum", fill_value=0, margins=True).rename(columns={"1W": "1 Week"})
-    pv_cash = pd.pivot_table(dfCash, index=idx, values=["Notification"], aggfunc="count", fill_value=0, margins=True).rename(columns={"Notification":"Cash"})
-    pv_cashless = pd.pivot_table(dfComplete, index=idx, values=["Cashless"], aggfunc="sum", fill_value=0, margins=True)
-    pv_TAT = pd.pivot_table(dfComplete, index=idx, values=["Lo"], aggfunc="mean", fill_value=0, margins=True).rename(columns={"Lo": "TAT"})
+    pv_1D = pd.pivot_table(dfComplete, index=idx, values=["1D"], aggfunc="sum", fill_value=0, margins=True).rename(columns={"1D": "1 Day"}).fillna(0)
+    pv_1W = pd.pivot_table(dfComplete, index=idx, values=["1W"], aggfunc="sum", fill_value=0, margins=True).rename(columns={"1W": "1 Week"}).fillna(0)
+    pv_cash = pd.pivot_table(dfCash, index=idx, values=["Notification"], aggfunc="count", fill_value=0, margins=True).rename(columns={"Notification":"Cash"}).fillna(0)
+    pv_cashless = pd.pivot_table(dfComplete, index=idx, values=["Cashless"], aggfunc="sum", fill_value=0, margins=True).fillna(0)
+    pv_TAT = pd.pivot_table(dfComplete, index=idx, values=["Lo"], aggfunc="mean", fill_value=0, margins=True).rename(columns={"Lo": "TAT"}).fillna(0)
     pv = reduce(lambda left, right: pd.merge(left, right, on=idx, how="left"), [pv_cmplt, pv_1D, pv_1W, pv_cash, pv_cashless, pv_TAT]).fillna(0)
     pv["Produktifitas"] = pv["Komplit"] / hari
-    pv["1D Ratio"] = (pv["1 Day"] / pv["Komplit"]) 
-    pv["1W Ratio"] = (pv["1 Week"] / pv["Komplit"]) 
-    pv["Cashless Ratio"] = (pv["Cashless"] / ( pv["Cashless"] + pv["Cash"]))
+    pv["1D Ratio"] = (pv["1 Day"] / pv["Komplit"]).fillna(0)
+    pv["1W Ratio"] = (pv["1 Week"] / pv["Komplit"]).fillna(0)
+    pv["Cashless Ratio"] = (pv["Cashless"] / ( pv["Cashless"] + pv["Cash"])).fillna(0)
 
     pv = pv[['Komplit','TAT', '1 Day', '1 Week', 'Cash', 'Cashless', 'Produktifitas', '1D Ratio', '1W Ratio', 'Cashless Ratio']]
     
@@ -237,6 +246,9 @@ def get_table_position(result: Dict[str, Dict[str, pd.DataFrame]]) -> dict:
         vertical_layout = sheet == "Pencapaian"
 
         for name, table in tables.items():
+            if table is None:
+                continue
+
             table = table.copy()
             #table = table.reset_index(drop=False)  # pastikan index jadi kolom
             nrow, ncol = table.shape  # termasuk kolom index yang baru
